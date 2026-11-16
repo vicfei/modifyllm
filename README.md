@@ -50,6 +50,14 @@ No preset removes safety or refusal behaviors. Custom pair sets are permitted fo
 research; receipts record their reference hash. Bypassing screening marks the
 verdict `screen_bypassed` — it can never be reported as `passed`.
 
+## Related maps
+
+modifyllm is the hands-on practice of three curated maps of the fields it draws on:
+
+- [awesome-self-improving-coding-agents](https://github.com/vicfei/awesome-self-improving-coding-agents) — RSI × software engineering: the improvement loop this tool guards (verify before you keep)
+- [awesome-agentic-ml](https://github.com/vicfei/awesome-agentic-ml) — agents building models & data: the operator theory (acquire / transfer / edit) the three commands implement
+- [awesome-weight-editing](https://github.com/vicfei/awesome-weight-editing) — the editing operator in depth: the five research families behind the `edit` command
+
 ## License
 
 Apache-2.0 (code) · CC-BY-4.0 (docs)
