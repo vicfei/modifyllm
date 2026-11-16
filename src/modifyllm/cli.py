@@ -64,6 +64,36 @@ def edit_hf(
 
 
 @app.command()
+def distill_smoke(
+    out: Path = typer.Option(Path("runs"), help="runs root directory"),
+    teacher: str = typer.Option("mock", help="mock | piccolo"),
+    piccolo_dir: str | None = typer.Option(None, help="downloaded Piccolo checkpoint dir (teacher=piccolo)"),
+    student: str = typer.Option("Qwen/Qwen3.5-0.8B", help="student model id"),
+    n: int = typer.Option(300, help="instances"),
+    epochs: int = typer.Option(2),
+    device: str = typer.Option("cuda:0", help="student device"),
+    teacher_device: str = typer.Option("cpu", help="piccolo teacher device"),
+):
+    """piccolino v0 smoke: recipe → teacher scores → LoRA KL → frozen eval → receipt."""
+    from modifyllm.distill.run_smoke import run_distill_smoke
+
+    receipt, run_dir = run_distill_smoke(
+        out, teacher=teacher, piccolo_dir=piccolo_dir, student_id=student,
+        n=n, epochs=epochs, device=device, teacher_device=teacher_device,
+    )
+    typer.echo(f"run_dir: {run_dir}")
+    typer.echo(f"status:  {receipt.status}  verdict: {receipt.verdict}")
+    spec = receipt.operator.get("spec", {})
+    if spec:
+        typer.echo(
+            f"kl:      pre {spec.get('pre_kl', 0):.4f} → frozen {spec.get('frozen_kl', 0):.4f} "
+            f"| acc_vs_gold {spec.get('accuracy_vs_gold', 0):.3f} | tv {spec.get('tv_vs_teacher', 0):.3f}"
+        )
+    if receipt.failure is not None:
+        typer.echo(f"failure: {receipt.failure.stage} — {receipt.failure.error}")
+
+
+@app.command()
 def recover(root: Path = typer.Argument(..., help="runs root")):
     """Mark stale running receipts as interrupted."""
     from modifyllm.core.txn import scan_interrupted

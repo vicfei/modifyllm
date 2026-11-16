@@ -27,7 +27,9 @@ v0.1 engineering closure (see DESIGN §8):
 - [x] direction / selection / frozen three-way data protocol; frozen set evaluated once
 - [x] two-phase commit, crash recovery, rollback with event receipts
 - [x] measured false-positive rate on a null world (stat suite)
-- [ ] HF backend + real-model nightly (v0.2) · delegated operators (v0.3)
+- [x] HF backend + real-model nightly (v0.2): split-half grader, discovery-based layer selection, `edit-hf`
+- [x] distillation smoke (v0.3 scope start): `distill-smoke` — recipe → teacher (mock / Piccolo reference) → LoRA KL → frozen-once eval → receipt
+- [ ] delegated operators as full transactions (v0.3)
 
 ## Quickstart
 
@@ -43,6 +45,11 @@ modifyllm rollback runs/<run_id>         # restore the source snapshot
 The v0.1 backend is a deterministic synthetic world (numpy) — it exists so the
 transaction and statistics machinery can be tested exactly, without a GPU. The
 HF adapter (Qwen-class small models) lands in v0.2 behind the same interface.
+
+```bash
+modifyllm edit-hf                        # real model, bundled filler-prefix preset
+modifyllm distill-smoke --teacher mock   # piccolino smoke: recipe → KL LoRA → receipt
+```
 
 ## Safety boundary
 
@@ -60,4 +67,7 @@ modifyllm is the hands-on practice of three curated maps of the fields it draws 
 
 ## License
 
-Apache-2.0 (code) · CC-BY-4.0 (docs)
+Apache-2.0 (code) · CC-BY-4.0 (docs) · `src/modifyllm/distill/flex_layout.py` is
+adapted from [FlexDM v1.0](https://github.com/1000luca/FlexDM) (MIT, © 2026
+1000luca) via the Piccolo reference implementation; the MIT header is retained
+in the file.
