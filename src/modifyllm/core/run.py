@@ -1,16 +1,22 @@
-"""RunEngine: the v0.1 pipeline (DESIGN.md §5, §3).
+"""RunEngine: the pipeline (DESIGN.md §5, §3).
 
 probe direction → α-candidates on selection set → gates (ppl / controls+permutation /
 regression) with escalation → single frozen-test with bootstrap CI → two-phase commit
 → receipt. Every path terminates in a legal receipt state.
+
+Adapters with ``split_half_grader = True`` (HF) have no planted ground truth, so the
+direction set is split: even pairs estimate the edit direction u, odd pairs the
+grader direction g — the grader is then independent of the edit it judges.
 """
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import numpy as np
 
+from modifyllm.adapters import ModelAdapter
 from modifyllm.adapters.synthetic import SyntheticAdapter
 from modifyllm.core import receipt as receipt_io
 from modifyllm.core import txn
@@ -60,6 +66,51 @@ def run_synthetic(
     return receipt, root / receipt.run_id
 
 
+def run_hf(
+    root: Path,
+    preset_path: str | Path | None = None,
+    model_id: str | None = None,
+    revision: str | None = None,
+    layers: list[int] | None = None,
+    dtype: str = "float32",
+    screen_bypass: bool = False,
+    n_direction: int = 8,
+    n_selection: int = 16,
+    n_frozen: int = 24,
+    controls_n: int = 8,
+    alpha_grid: list[float] | None = None,
+) -> tuple[Receipt, Path]:
+    """Real-model pipeline (v0.2): small sets by default — nightly-grade budgets."""
+    from modifyllm.adapters.hf import DEFAULT_MODEL_ID, DEFAULT_REVISION, HFModelAdapter, load_preset
+
+    if preset_path is None:
+        import modifyllm
+
+        preset_path = Path(modifyllm.__file__).parent / "presets" / "filler_prefix.json"
+    preset = load_preset(preset_path)
+    digest = hashlib.sha256(Path(preset_path).read_bytes()).hexdigest()[:16]
+    adapter = HFModelAdapter(
+        preset=preset,
+        model_id=model_id or DEFAULT_MODEL_ID,
+        revision=revision or DEFAULT_REVISION,
+        layers=layers,
+        dtype=dtype,
+    )
+    goal = GoalSpec(
+        kind="preset:filler-prefix",
+        pairs_ref=f"sha256:{digest}",
+        grader={"type": "split-half-hidden-direction", "version": "0"},
+    )
+    ev = EvalSpec(direction_set_n=n_direction, selection_set_n=n_selection, frozen_set_n=n_frozen)
+    spec = EditSpec(
+        layers=list(adapter.layer_names),
+        alpha_grid=alpha_grid or [0.5, 1.0, 2.0, 4.0],
+        controls_n=controls_n,
+    )
+    receipt = RunEngine().run(root, adapter, goal, ev, spec, screen_bypass=screen_bypass)
+    return receipt, root / receipt.run_id
+
+
 class _Candidate(tuple):
     """(selection_effect, alpha, files, selection_diffs)."""
 
@@ -68,7 +119,7 @@ class RunEngine:
     def run(
         self,
         root: Path,
-        adapter: SyntheticAdapter,
+        adapter: ModelAdapter,
         goal: GoalSpec,
         ev: EvalSpec,
         spec: EditSpec,
@@ -85,7 +136,7 @@ class RunEngine:
             ts_started=txn.utcnow(),
             model_in=ModelRef(id=adapter.model_id, revision="synthetic-v0"),
             rollback_to="snap_src",
-            env={"code_version": "0.1.0", "backend": "numpy-synthetic",
+            env={"code_version": "0.2.0", "backend": "numpy-synthetic",
                  "seeds": {"data": ev.seed_data, "bootstrap": ev.seed_bootstrap}},
             goal=goal.model_dump(),
             data_protocol={
@@ -94,6 +145,11 @@ class RunEngine:
                 "frozen_set": {"n": ev.frozen_set_n, "evaluated_once": True},
             },
         )
+        if hasattr(adapter, "metadata"):
+            receipt.env.update(adapter.metadata)
+            receipt.model_in = ModelRef(
+                id=adapter.model_id, revision=str(adapter.metadata.get("revision", "synthetic-v0"))
+            )
         receipt_io.write(run_dir, receipt)
 
         # 1) source snapshot (rollback target, immutable)
@@ -103,9 +159,15 @@ class RunEngine:
 
         rng = np.random.default_rng(ev.seed_data)
 
-        # 2) direction extraction — direction set only (DESIGN §5.1)
+        # 2) direction extraction — direction set only (DESIGN §5.1).
+        #    Split-half adapters (HF): even pairs → edit direction u,
+        #    odd pairs → independent grader direction g.
         deltas = adapter.collect_pair_hiddens(ev.direction_set_n, rng)
-        u = direction_from_pair_deltas(deltas)
+        if getattr(adapter, "split_half_grader", False) and len(deltas) >= 4:
+            u = direction_from_pair_deltas(deltas[0::2])
+            adapter.set_grader_direction(direction_from_pair_deltas(deltas[1::2]))
+        else:
+            u = direction_from_pair_deltas(deltas)
 
         # 3) α-candidates — selection set only, never frozen (DESIGN §5.3)
         sel_items = adapter.eval_items(ev.selection_set_n, ev.seed_data + 101)
@@ -186,7 +248,10 @@ class RunEngine:
             if screen is not None:
                 receipt.screen = screen
 
-        receipt.budget = Budget(forward_passes=adapter.forward_passes, staging_gb=0.001)
+        receipt.budget = Budget(
+            forward_passes=adapter.forward_passes,
+            staging_gb=getattr(adapter, "staging_gb_value", 0.001),
+        )
         receipt.ts_finished = txn.utcnow()
         receipt_io.write(run_dir, receipt)
         return receipt

@@ -1,8 +1,13 @@
 """Model adapters.
 
 v0.1 ships SyntheticAdapter (numpy, deterministic, CPU-instant).
-HFModelAdapter (torch/transformers, lazy imports) arrives with v0.2 nightly
-experiments — its interface is fixed here so tests can program against it.
+v0.2 adds HFModelAdapter (torch/transformers, lazy imports, CPU-first).
+
+The HF adapter sets ``split_half_grader = True``: there is no planted ground
+truth on real models, so the grader direction is estimated from the odd
+direction-set pairs while the edit direction uses the even ones — grading an
+edit against a direction estimated independently of it is what keeps the
+random-unit controls meaningful.
 """
 
 from __future__ import annotations
@@ -25,6 +30,9 @@ class ModelAdapter(Protocol):
 
     def collect_pair_hiddens(self, n_pairs: int, rng: np.random.Generator) -> list[np.ndarray]:
         """n_pairs deltas h_unwanted − h_wanted per target layer block, output space."""
+
+    def eval_items(self, n: int, seed: int) -> np.ndarray:
+        """n opaque evaluation items (synthetic: vectors; HF: texts)."""
 
     def goal_outputs(self, items: np.ndarray) -> np.ndarray:
         """Forward pass over evaluation items; returns per-item goal scores (before)."""

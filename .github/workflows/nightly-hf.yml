@@ -1,0 +1,30 @@
+name: HF nightly
+
+on:
+  schedule:
+    - cron: "30 18 * * *" # 18:30 UTC daily
+  workflow_dispatch:
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      MODIFYLLM_HF_MODEL: Qwen/Qwen3.5-0.8B
+      MODIFYLLM_HF_REVISION: 2fc06364715b967f1860aea9cf38778875588b17
+      HF_HOME: /tmp/hf-cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -e ".[dev,hf]"
+      - run: pytest -m hf_nightly -v -s
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nightly-runs-${{ github.run_number }}
+          path: runs/
+          retention-days: 14
+          if-no-files-found: ignore

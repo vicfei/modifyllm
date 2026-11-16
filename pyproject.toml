@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "modifyllm"
-version = "0.1.0"
+version = "0.2.0"
 description = "Modify with receipts: verified, auditable, rollbackable model modification (edit / finetune / distill / merge)."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -25,6 +25,13 @@ modifyllm = "modifyllm.cli:run"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+modifyllm = ["presets/*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+  "hf: needs torch (+transformers) — tiny random models, no downloads",
+  "hf_nightly: real-model run — downloads pinned weights, minutes-scale",
+]

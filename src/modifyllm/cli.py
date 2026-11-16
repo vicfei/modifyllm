@@ -30,6 +30,40 @@ def edit(
 
 
 @app.command()
+def edit_hf(
+    out: Path = typer.Option(Path("runs"), help="runs root directory"),
+    model: str | None = typer.Option(None, help="HF model id (default: Qwen/Qwen3.5-0.8B)"),
+    revision: str | None = typer.Option(None, help="model revision sha or branch (default: pinned)"),
+    preset: Path | None = typer.Option(None, help="preset JSON (default: bundled filler_prefix)"),
+    layers: str | None = typer.Option(None, help="comma-separated target layer indices (default: auto mid-late)"),
+    no_screen: bool = typer.Option(False, "--no-screen", help="bypass screening (verdict=screen_bypassed)"),
+    direction_n: int = typer.Option(8),
+    selection_n: int = typer.Option(16),
+    frozen_n: int = typer.Option(24),
+    controls_n: int = typer.Option(8),
+):
+    """Run the full pipeline on a real HF model (v0.2 backend)."""
+    from modifyllm.core.run import run_hf
+
+    layer_idx = [int(x) for x in layers.split(",")] if layers else None
+    receipt, run_dir = run_hf(
+        out, preset_path=preset, model_id=model, revision=revision, layers=layer_idx,
+        screen_bypass=no_screen, n_direction=direction_n, n_selection=selection_n,
+        n_frozen=frozen_n, controls_n=controls_n,
+    )
+    typer.echo(f"run_dir: {run_dir}")
+    typer.echo(f"status:  {receipt.status}  verdict: {receipt.verdict}")
+    if receipt.screen is not None:
+        pg = receipt.screen.ppl_gate
+        typer.echo(f"ppl:     {pg.value:+.4f} (gate {pg.threshold}) ({pg.verdict})")
+        if receipt.screen.frozen_eval is not None:
+            fe = receipt.screen.frozen_eval
+            typer.echo(f"frozen:  {fe.value:+.4f} CI95 [{fe.ci95[0]:+.4f}, {fe.ci95[1]:+.4f}] ({fe.verdict})")
+    if receipt.failure is not None:
+        typer.echo(f"failure: {receipt.failure.stage} — {receipt.failure.error}")
+
+
+@app.command()
 def recover(root: Path = typer.Argument(..., help="runs root")):
     """Mark stale running receipts as interrupted."""
     from modifyllm.core.txn import scan_interrupted
